@@ -135,11 +135,15 @@ type MachineSetStatus struct {
 	// LastOperation performed
 	LastOperation LastOperation `json:"lastOperation,omitempty"`
 
-	// FailedMachines has summary of machines on which lastOperation Failed
+	// FailedMachines contains summaries of machines whose lastOperation failed and are not preserved
 	// +optional
 	FailedMachines *[]MachineSummary `json:"failedMachines,omitempty"`
 
 	// AutoPreserveFailedMachineCount has a count of the number of failed machines in the machineset that are currently auto-preserved
 	// +optional
 	AutoPreserveFailedMachineCount int32 `json:"autoPreserveFailedMachineCount,omitempty"`
+
+	// PreservedMachines contains summaries of machines which are currently preserved
+	// +optional
+	PreservedMachines *[]PreservedMachineSummary `json:"preservedMachines,omitempty"`
 }

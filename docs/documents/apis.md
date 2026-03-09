@@ -940,7 +940,8 @@ OrchestrationType
 (<em>Appears on:</em>
 <a href="#machine.sapcloud.io/v1alpha1.MachineSetStatus">MachineSetStatus</a>, 
 <a href="#machine.sapcloud.io/v1alpha1.MachineStatus">MachineStatus</a>, 
-<a href="#machine.sapcloud.io/v1alpha1.MachineSummary">MachineSummary</a>)
+<a href="#machine.sapcloud.io/v1alpha1.MachineSummary">MachineSummary</a>, 
+<a href="#machine.sapcloud.io/v1alpha1.PreservedMachineSummary">PreservedMachineSummary</a>)
 </p>
 <p>
 <p>LastOperation suggests the last operation performed on the object</p>
@@ -1624,7 +1625,23 @@ newest MachineSet.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>FailedMachines has summary of machines on which lastOperation Failed</p>
+<p>FailedMachines contains summaries of machines whose lastOperation failed and are not preserved</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>preservedMachines</code>
+</td>
+<td>
+<em>
+<a href="#machine.sapcloud.io/v1alpha1.*../../pkg/apis/machine/v1alpha1.PreservedMachineSummary">
+[]*../../machine-controller-manager/pkg/apis/machine/v1alpha1.PreservedMachineSummary
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>PreservedMachines contains summaries of machines which are currently preserved</p>
 </td>
 </tr>
 </tbody>
@@ -1731,7 +1748,8 @@ InPlaceUpdate.</p>
 (<code>string</code> alias)</p></h3>
 <p>
 (<em>Appears on:</em>
-<a href="#machine.sapcloud.io/v1alpha1.CurrentStatus">CurrentStatus</a>)
+<a href="#machine.sapcloud.io/v1alpha1.CurrentStatus">CurrentStatus</a>, 
+<a href="#machine.sapcloud.io/v1alpha1.PreservedMachineSummary">PreservedMachineSummary</a>)
 </p>
 <p>
 <p>MachinePhase is a label for the condition of a machine at the current time.</p>
@@ -2082,7 +2100,7 @@ LastOperation
 </td>
 <td>
 <em>(Optional)</em>
-<p>FailedMachines has summary of machines on which lastOperation Failed</p>
+<p>FailedMachines contains summaries of machines whose lastOperation failed and are not preserved</p>
 </td>
 </tr>
 <tr>
@@ -2097,6 +2115,22 @@ int32
 <td>
 <em>(Optional)</em>
 <p>AutoPreserveFailedMachineCount has a count of the number of failed machines in the machineset that are currently auto-preserved</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>preservedMachines</code>
+</td>
+<td>
+<em>
+<a href="#machine.sapcloud.io/v1alpha1.[]../../pkg/apis/machine/v1alpha1.PreservedMachineSummary">
+[]../../machine-controller-manager/pkg/apis/machine/v1alpha1.PreservedMachineSummary
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>PreservedMachines contains summaries of machines which are currently preserved</p>
 </td>
 </tr>
 </tbody>
@@ -2304,7 +2338,7 @@ It can be used by future operation calls to determine current infrastucture stat
 <b>MachineSummary</b>
 </h3>
 <p>
-<p>MachineSummary store the summary of machine.</p>
+<p>MachineSummary stores the summary of machine.</p>
 </p>
 <table>
 <thead>
@@ -2353,7 +2387,7 @@ LastOperation
 </em>
 </td>
 <td>
-<p>Last operation refers to the status of the last operation performed</p>
+<p>LastOperation refers to the status of the last operation performed</p>
 </td>
 </tr>
 <tr>
@@ -2781,6 +2815,108 @@ see: <a href="https://issues.k8s.io/61966">https://issues.k8s.io/61966</a></p>
 <p>
 <p>OrchestrationType specifies the orchestration type for the inplace update.</p>
 </p>
+<br>
+<h3 id="machine.sapcloud.io/v1alpha1.PreservedMachineSummary">
+<b>PreservedMachineSummary</b>
+</h3>
+<p>
+<p>PreservedMachineSummary stores the summary of a preserved machine.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code>
+</td>
+<td>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Name of the machine object</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>providerID</code>
+</td>
+<td>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ProviderID represents the provider&rsquo;s unique ID given to a machine</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>phase</code>
+</td>
+<td>
+<em>
+<a href="#machine.sapcloud.io/v1alpha1.MachinePhase">
+MachinePhase
+</a>
+</em>
+</td>
+<td>
+<p>Phase of the machine object</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>lastOperation</code>
+</td>
+<td>
+<em>
+<a href="#machine.sapcloud.io/v1alpha1.LastOperation">
+LastOperation
+</a>
+</em>
+</td>
+<td>
+<p>LastOperation refers to the status of the last operation performed</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>preserveExpiryTime</code>
+</td>
+<td>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta">
+Kubernetes meta/v1.Time
+</a>
+</em>
+</td>
+<td>
+<p>PreserveExpiryTime refers to the time at which the machine preservation will be stopped</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ownerRef</code>
+</td>
+<td>
+<em>
+string
+</em>
+</td>
+<td>
+<p>OwnerRef</p>
+</td>
+</tr>
+</tbody>
+</table>
 <br>
 <h3 id="machine.sapcloud.io/v1alpha1.RollbackConfig">
 <b>RollbackConfig</b>

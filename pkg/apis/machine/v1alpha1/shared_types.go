@@ -62,7 +62,7 @@ type MachineConfiguration struct {
 	NodeConditions *string `json:"nodeConditions,omitempty"`
 }
 
-// MachineSummary store the summary of machine.
+// MachineSummary stores the summary of machine.
 type MachineSummary struct {
 	// Name of the machine object
 	Name string `json:"name,omitempty"`
@@ -70,8 +70,29 @@ type MachineSummary struct {
 	// ProviderID represents the provider's unique ID given to a machine
 	ProviderID string `json:"providerID,omitempty"`
 
-	// Last operation refers to the status of the last operation performed
+	// LastOperation refers to the status of the last operation performed
 	LastOperation LastOperation `json:"lastOperation,omitempty"`
+
+	// OwnerRef
+	OwnerRef string `json:"ownerRef,omitempty"`
+}
+
+// PreservedMachineSummary stores the summary of a preserved machine.
+type PreservedMachineSummary struct {
+	// Name of the machine object
+	Name string `json:"name,omitempty"`
+
+	// ProviderID represents the provider's unique ID given to a machine
+	ProviderID string `json:"providerID,omitempty"`
+
+	// Phase of the machine object
+	Phase MachinePhase `json:"phase,omitempty"`
+
+	// LastOperation refers to the status of the last operation performed
+	LastOperation LastOperation `json:"lastOperation,omitempty"`
+
+	// PreserveExpiryTime refers to the time at which the machine preservation will be stopped
+	PreserveExpiryTime *metav1.Time `json:"preserveExpiryTime,omitempty"`
 
 	// OwnerRef
 	OwnerRef string `json:"ownerRef,omitempty"`

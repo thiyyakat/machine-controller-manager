@@ -45,6 +45,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.MachineTemplateSpec":            schema_pkg_apis_machine_v1alpha1_MachineTemplateSpec(ref),
 		"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.NodeTemplate":                   schema_pkg_apis_machine_v1alpha1_NodeTemplate(ref),
 		"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.NodeTemplateSpec":               schema_pkg_apis_machine_v1alpha1_NodeTemplateSpec(ref),
+		"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.PreservedMachineSummary":        schema_pkg_apis_machine_v1alpha1_PreservedMachineSummary(ref),
 		"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.RollbackConfig":                 schema_pkg_apis_machine_v1alpha1_RollbackConfig(ref),
 		"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.RollingUpdateMachineDeployment": schema_pkg_apis_machine_v1alpha1_RollingUpdateMachineDeployment(ref),
 		"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.UpdateConfiguration":            schema_pkg_apis_machine_v1alpha1_UpdateConfiguration(ref),
@@ -1049,7 +1050,7 @@ func schema_pkg_apis_machine_v1alpha1_MachineDeploymentStatus(ref common.Referen
 					},
 					"failedMachines": {
 						SchemaProps: spec.SchemaProps{
-							Description: "FailedMachines has summary of machines on which lastOperation Failed",
+							Description: "FailedMachines contains summaries of machines whose lastOperation failed and are not preserved",
 							Type:        []string{"array"},
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
@@ -1060,11 +1061,24 @@ func schema_pkg_apis_machine_v1alpha1_MachineDeploymentStatus(ref common.Referen
 							},
 						},
 					},
+					"preservedMachines": {
+						SchemaProps: spec.SchemaProps{
+							Description: "PreservedMachines contains summaries of machines which are currently preserved",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.PreservedMachineSummary"),
+									},
+								},
+							},
+						},
+					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.MachineDeploymentCondition", "github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.MachineSummary"},
+			"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.MachineDeploymentCondition", "github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.MachineSummary", "github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.PreservedMachineSummary"},
 	}
 }
 
@@ -1415,7 +1429,7 @@ func schema_pkg_apis_machine_v1alpha1_MachineSetStatus(ref common.ReferenceCallb
 					},
 					"failedMachines": {
 						SchemaProps: spec.SchemaProps{
-							Description: "FailedMachines has summary of machines on which lastOperation Failed",
+							Description: "FailedMachines contains summaries of machines whose lastOperation failed and are not preserved",
 							Type:        []string{"array"},
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
@@ -1434,11 +1448,25 @@ func schema_pkg_apis_machine_v1alpha1_MachineSetStatus(ref common.ReferenceCallb
 							Format:      "int32",
 						},
 					},
+					"preservedMachines": {
+						SchemaProps: spec.SchemaProps{
+							Description: "PreservedMachines contains summaries of machines which are currently preserved",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Default: map[string]interface{}{},
+										Ref:     ref("github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.PreservedMachineSummary"),
+									},
+								},
+							},
+						},
+					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.LastOperation", "github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.MachineSetCondition", "github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.MachineSummary"},
+			"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.LastOperation", "github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.MachineSetCondition", "github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.MachineSummary", "github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.PreservedMachineSummary"},
 	}
 }
 
@@ -1597,7 +1625,7 @@ func schema_pkg_apis_machine_v1alpha1_MachineSummary(ref common.ReferenceCallbac
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "MachineSummary store the summary of machine.",
+				Description: "MachineSummary stores the summary of machine.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"name": {
@@ -1616,7 +1644,7 @@ func schema_pkg_apis_machine_v1alpha1_MachineSummary(ref common.ReferenceCallbac
 					},
 					"lastOperation": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Last operation refers to the status of the last operation performed",
+							Description: "LastOperation refers to the status of the last operation performed",
 							Default:     map[string]interface{}{},
 							Ref:         ref("github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.LastOperation"),
 						},
@@ -1765,6 +1793,62 @@ func schema_pkg_apis_machine_v1alpha1_NodeTemplateSpec(ref common.ReferenceCallb
 		},
 		Dependencies: []string{
 			"k8s.io/api/core/v1.NodeSpec", "k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"},
+	}
+}
+
+func schema_pkg_apis_machine_v1alpha1_PreservedMachineSummary(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "PreservedMachineSummary stores the summary of a preserved machine.",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"name": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Name of the machine object",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"providerID": {
+						SchemaProps: spec.SchemaProps{
+							Description: "ProviderID represents the provider's unique ID given to a machine",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"phase": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Phase of the machine object",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"lastOperation": {
+						SchemaProps: spec.SchemaProps{
+							Description: "LastOperation refers to the status of the last operation performed",
+							Default:     map[string]interface{}{},
+							Ref:         ref("github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.LastOperation"),
+						},
+					},
+					"preserveExpiryTime": {
+						SchemaProps: spec.SchemaProps{
+							Description: "PreserveExpiryTime refers to the time at which the machine preservation will be stopped",
+							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.Time"),
+						},
+					},
+					"ownerRef": {
+						SchemaProps: spec.SchemaProps{
+							Description: "OwnerRef",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+			},
+		},
+		Dependencies: []string{
+			"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1.LastOperation", "k8s.io/apimachinery/pkg/apis/meta/v1.Time"},
 	}
 }
 

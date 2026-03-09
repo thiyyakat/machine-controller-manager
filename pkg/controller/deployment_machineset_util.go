@@ -50,6 +50,7 @@ func updateMachineSetStatus(ctx context.Context, machineClient machineapi.Machin
 		is.Generation == is.Status.ObservedGeneration &&
 		reflect.DeepEqual(is.Status.Conditions, newStatus.Conditions) &&
 		reflect.DeepEqual(is.Status.FailedMachines, newStatus.FailedMachines) &&
+		reflect.DeepEqual(is.Status.PreservedMachines, newStatus.PreservedMachines) &&
 		is.Status.AutoPreserveFailedMachineCount == newStatus.AutoPreserveFailedMachineCount {
 		return is, nil
 	}
@@ -105,7 +106,9 @@ func calculateMachineSetStatus(is *v1alpha1.MachineSet, filteredMachines []*v1al
 	autoPreserveFailedMachineCount := 0
 
 	failedMachines := []v1alpha1.MachineSummary{}
+	preservedMachines := []v1alpha1.PreservedMachineSummary{}
 	var machineSummary v1alpha1.MachineSummary
+	var preservedMachineSummary v1alpha1.PreservedMachineSummary
 
 	templateLabel := labels.Set(is.Spec.Template.Labels).AsSelectorPreValidated()
 	for _, machine := range filteredMachines {
@@ -118,7 +121,19 @@ func calculateMachineSetStatus(is *v1alpha1.MachineSet, filteredMachines []*v1al
 				readyReplicasCount++
 			}
 		}
-		if machine.Status.LastOperation.State == v1alpha1.MachineStateFailed {
+		if !machine.Status.CurrentStatus.PreserveExpiryTime.IsZero() {
+			preservedMachineSummary.Name = machine.Name
+			preservedMachineSummary.ProviderID = machine.Spec.ProviderID
+			preservedMachineSummary.Phase = machine.Status.CurrentStatus.Phase
+			preservedMachineSummary.LastOperation = machine.Status.LastOperation
+			preservedMachineSummary.PreserveExpiryTime = machine.Status.CurrentStatus.PreserveExpiryTime
+
+			//ownerRef populated here, so that deployment controller doesn't have to add it separately
+			if controller := metav1.GetControllerOf(machine); controller != nil {
+				preservedMachineSummary.OwnerRef = controller.Name
+			}
+			preservedMachines = append(preservedMachines, preservedMachineSummary)
+		} else if machine.Status.LastOperation.State == v1alpha1.MachineStateFailed { // prevent preserved failed machines from being added to failedMachines list
 			machineSummary.Name = machine.Name
 			machineSummary.ProviderID = machine.Spec.ProviderID
 			machineSummary.LastOperation = machine.Status.LastOperation
@@ -128,6 +143,7 @@ func calculateMachineSetStatus(is *v1alpha1.MachineSet, filteredMachines []*v1al
 			}
 			failedMachines = append(failedMachines, machineSummary)
 		}
+
 		// Count number of failed machines annotated with PreserveMachineAnnotationValuePreservedByMCM
 		if machine.Annotations[machineutils.PreserveMachineAnnotationKey] == machineutils.PreserveMachineAnnotationValuePreservedByMCM {
 			autoPreserveFailedMachineCount++
@@ -141,7 +157,13 @@ func calculateMachineSetStatus(is *v1alpha1.MachineSet, filteredMachines []*v1al
 	} else {
 		newStatus.FailedMachines = nil
 	}
-
+	// Update the PreservedMachines field when we see new preserved machines
+	// Clear PreservedMachines if there are no preserved machines.
+	if len(preservedMachines) > 0 {
+		newStatus.PreservedMachines = &preservedMachines
+	} else {
+		newStatus.PreservedMachines = nil
+	}
 	failureCond := GetCondition(&is.Status, v1alpha1.MachineSetReplicaFailure)
 	if manageReplicasErr != nil && failureCond == nil {
 		var reason string
