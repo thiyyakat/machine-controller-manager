@@ -330,13 +330,13 @@ spec:
                 format: int32
                 type: integer
               failedMachines:
-                description: FailedMachines has summary of machines on which lastOperation
-                  Failed
+                description: FailedMachines contains summaries of machines whose lastOperation
+                  failed and are not preserved
                 items:
-                  description: MachineSummary store the summary of machine.
+                  description: MachineSummary stores the summary of machine.
                   properties:
                     lastOperation:
-                      description: Last operation refers to the status of the last
+                      description: LastOperation refers to the status of the last
                         operation performed
                       properties:
                         description:
@@ -428,6 +428,54 @@ spec:
                   by the controller.
                 format: int64
                 type: integer
+              preservedMachines:
+                description: PreservedMachines contains summaries of machines which
+                  are currently preserved
+                items:
+                  description: PreservedMachineSummary stores the summary of a preserved
+                    machine.
+                  properties:
+                    lastOperation:
+                      description: LastOperation refers to the status of the last
+                        operation performed
+                      properties:
+                        description:
+                          description: Description of the current operation
+                          type: string
+                        errorCode:
+                          description: ErrorCode of the current operation if any
+                          type: string
+                        lastUpdateTime:
+                          description: Last update time of current operation
+                          format: date-time
+                          type: string
+                        state:
+                          description: State of operation
+                          type: string
+                        type:
+                          description: Type of operation
+                          type: string
+                      type: object
+                    name:
+                      description: Name of the machine object
+                      type: string
+                    ownerRef:
+                      description: OwnerRef
+                      type: string
+                    phase:
+                      description: Phase of the machine object
+                      type: string
+                    preserveExpiryTime:
+                      description: PreserveExpiryTime refers to the time at which
+                        the machine preservation will be stopped
+                      format: date-time
+                      type: string
+                    providerID:
+                      description: ProviderID represents the provider's unique ID
+                        given to a machine
+                      type: string
+                  type: object
+                type: array
               readyReplicas:
                 description: The number of ready replicas for this replica set.
                 format: int32

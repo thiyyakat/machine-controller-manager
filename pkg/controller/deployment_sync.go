@@ -636,13 +636,21 @@ func calculateDeploymentStatus(allISs []*v1alpha1.MachineSet, newIS *v1alpha1.Ma
 		CollisionCount:      deployment.Status.CollisionCount,
 	}
 	status.FailedMachines = []*v1alpha1.MachineSummary{}
+	status.PreservedMachines = []*v1alpha1.PreservedMachineSummary{}
 
 	for _, is := range allISs {
-		if is != nil && is.Status.FailedMachines != nil {
-			for idx := range *is.Status.FailedMachines {
-				// Memory pointed by FailedMachines's pointer fields should never be altered using them
-				// as they point to the machineset object's fields, and only machineset controller should alter them
-				status.FailedMachines = append(status.FailedMachines, &(*is.Status.FailedMachines)[idx])
+		if is != nil {
+			if is.Status.FailedMachines != nil {
+				for idx := range *is.Status.FailedMachines {
+					// Memory pointed by FailedMachines's pointer fields should never be altered using them
+					// as they point to the machineset object's fields, and only machineset controller should alter them
+					status.FailedMachines = append(status.FailedMachines, &(*is.Status.FailedMachines)[idx])
+				}
+			}
+			if is.Status.PreservedMachines != nil {
+				for idx := range *is.Status.PreservedMachines {
+					status.PreservedMachines = append(status.PreservedMachines, &(*is.Status.PreservedMachines)[idx])
+				}
 			}
 		}
 	}

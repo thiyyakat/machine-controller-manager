@@ -414,11 +414,14 @@ type MachineSetStatus struct {
 	// LastOperation performed
 	LastOperation LastOperation
 
-	// FailedMachines has summary of machines on which lastOperation Failed
+	// FailedMachines contains summaries of machines whose lastOperation failed and are not preserved
 	FailedMachines *[]MachineSummary
 
 	// AutoPreserveFailedMachineCount has a count of the number of failed machines in the machineset that are currently auto-preserved
 	AutoPreserveFailedMachineCount int32
+
+	// PreservedMachines contains summaries of machines which are currently preserved
+	PreservedMachines *[]PreservedMachineSummary
 }
 
 // MachineSummary store the summary of machine.
@@ -431,6 +434,27 @@ type MachineSummary struct {
 
 	// Last operation refers to the status of the last operation performed
 	LastOperation LastOperation
+
+	// OwnerRef
+	OwnerRef string
+}
+
+// PreservedMachineSummary stores the summary of a preserved machine.
+type PreservedMachineSummary struct {
+	// Name of the machine object
+	Name string
+
+	// ProviderID represents the provider's unique ID given to a machine
+	ProviderID string
+
+	// Phase of the machine object
+	Phase MachinePhase
+
+	// LastOperation refers to the status of the last operation performed
+	LastOperation LastOperation
+
+	// PreserveExpiryTime refers to the time at which the machine preservation will be stopped
+	PreserveExpiryTime *metav1.Time
 
 	// OwnerRef
 	OwnerRef string
@@ -648,8 +672,11 @@ type MachineDeploymentStatus struct {
 	// newest MachineSet.
 	CollisionCount *int32
 
-	// FailedMachines has summary of machines on which lastOperation Failed
+	// FailedMachines contains summaries of machines whose lastOperation failed and are not preserved
 	FailedMachines []*MachineSummary
+
+	// PreservedMachines contains summaries of machines which are currently preserved
+	PreservedMachines []*PreservedMachineSummary
 }
 
 // MachineDeploymentConditionType are the valid conditions of a MachineDeployment.

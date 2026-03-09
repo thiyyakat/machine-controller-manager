@@ -230,9 +230,13 @@ type MachineDeploymentStatus struct {
 	// +optional
 	CollisionCount *int32 `json:"collisionCount,omitempty"`
 
-	// FailedMachines has summary of machines on which lastOperation Failed
+	// FailedMachines contains summaries of machines whose lastOperation failed and are not preserved
 	// +optional
 	FailedMachines []*MachineSummary `json:"failedMachines,omitempty"`
+
+	// PreservedMachines contains summaries of machines which are currently preserved
+	// +optional
+	PreservedMachines []*PreservedMachineSummary `json:"preservedMachines,omitempty"`
 }
 
 // MachineDeploymentConditionType are valid conditions of MachineDeployments
