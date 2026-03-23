@@ -132,8 +132,8 @@ func calculateMachineSetStatus(is *v1alpha1.MachineSet, filteredMachines []*v1al
 			if controller := metav1.GetControllerOf(machine); controller != nil {
 				preservedMachineSummary.OwnerRef = controller.Name
 			}
-			preservedMachines = append(preservedMachines, preservedMachineSummary)
-		} else if machine.Status.LastOperation.State == v1alpha1.MachineStateFailed { // prevent preserved failed machines from being added to failedMachines list
+			preservedMachines = append(preservedMachines, preservedMachineSummary) // prevent preserved failed machines from being added to failedMachines list
+		} else if machine.Status.LastOperation.State == v1alpha1.MachineStateFailed {
 			machineSummary.Name = machine.Name
 			machineSummary.ProviderID = machine.Spec.ProviderID
 			machineSummary.LastOperation = machine.Status.LastOperation
@@ -143,7 +143,6 @@ func calculateMachineSetStatus(is *v1alpha1.MachineSet, filteredMachines []*v1al
 			}
 			failedMachines = append(failedMachines, machineSummary)
 		}
-
 		// Count number of failed machines annotated with PreserveMachineAnnotationValuePreservedByMCM
 		if machine.Annotations[machineutils.PreserveMachineAnnotationKey] == machineutils.PreserveMachineAnnotationValuePreservedByMCM {
 			autoPreserveFailedMachineCount++
@@ -236,13 +235,13 @@ func filterOutMachineSetCondition(conditions []v1alpha1.MachineSetCondition, con
 	return newConditions
 }
 
+// isMachineAvailable returns true if machine is Available or Running or is preserved, otherwise false.
 func isMachineAvailable(machine *v1alpha1.Machine) bool {
-
 	if machine.Status.CurrentStatus.Phase == v1alpha1.MachineAvailable ||
-		machine.Status.CurrentStatus.Phase == v1alpha1.MachineRunning {
+		machine.Status.CurrentStatus.Phase == v1alpha1.MachineRunning ||
+		!machine.Status.CurrentStatus.PreserveExpiryTime.IsZero() {
 		return true
 	}
-
 	return false
 }
 
