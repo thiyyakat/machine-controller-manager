@@ -428,13 +428,12 @@ func (c *controller) manageReplicas(ctx context.Context, allMachines []*v1alpha1
 
 	staleMachines = append(staleMachines, getMachinesMarkedForDeletion(machinesWithoutUpdateSuccessfulLabel, machineSet)...)
 	for _, machine := range machinesWithoutUpdateSuccessfulLabel {
-		// if machine is preserved or in the process of being preserved, the machine should be considered an active machine and not be added to stale machines
-		preserve := c.shouldFailedMachineBeTerminated(machine)
-		if !preserve {
-			staleMachines = append(staleMachines, machine)
-		}
 		if machineutils.IsMachineFailed(machine) {
-			staleMachines = append(staleMachines, machine)
+			// if machine is preserved or in the process of being preserved, the machine should be considered an active machine and not be added to stale machines
+			preserve := c.shouldFailedMachineBeTerminated(machine)
+			if !preserve {
+				staleMachines = append(staleMachines, machine)
+			}
 		}
 	}
 
@@ -890,6 +889,7 @@ func isMachineStatusEqual(s1, s2 v1alpha1.MachineStatus) bool {
 // or if it is a candidate for auto-preservation. If none of these conditions are met, it returns true indicating
 // that the failed machine should be terminated.
 func (c *controller) shouldFailedMachineBeTerminated(machine *v1alpha1.Machine) bool {
+	klog.Infof("TESTING:shouldFailedMachineBeTerminated")
 	// if preserve expiry time is set and is in the future, machine is already preserved
 	if machine.Status.CurrentStatus.PreserveExpiryTime != nil {
 		if machine.Status.CurrentStatus.PreserveExpiryTime.After(time.Now()) {
@@ -899,7 +899,9 @@ func (c *controller) shouldFailedMachineBeTerminated(machine *v1alpha1.Machine) 
 		klog.V(3).Infof("Preservation of failed machine %q has timed out at %v", machine.Name, machine.Status.CurrentStatus.PreserveExpiryTime)
 		return true
 	}
+	klog.Infof("TESTING:shouldFailedMachineBeTerminated:not preserved")
 	preserveValue, err := c.findEffectivePreserveValue(machine)
+	klog.Infof("TESTING:shouldFailedMachineBeTerminated:%v", preserveValue)
 	if err != nil {
 		// in case of error fetching node or annotations, we don't want to block deletion of failed machines, so we return true
 		klog.Errorf("error finding effective preserve value for machine %q: %v. Proceeding with termination of the machine.", machine.Name, err)

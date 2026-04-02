@@ -247,7 +247,7 @@ func (c *controller) reconcileClusterMachine(ctx context.Context, machine *v1alp
 			return retry, err
 		}
 	}
-
+	klog.V(0).Infof("TESTING:calling manageMachinePreservation")
 	retry, err = c.manageMachinePreservation(ctx, machine)
 	if err != nil {
 		return retry, err
@@ -749,6 +749,7 @@ func (c *controller) isCreationProcessing(machine *v1alpha1.Machine) bool {
 
 // manageMachinePreservation manages machine preservation based on the preserve annotation values on the node and machine objects.
 func (c *controller) manageMachinePreservation(ctx context.Context, machine *v1alpha1.Machine) (retry machineutils.RetryPeriod, err error) {
+	klog.Infof("TESTING: manageMachinePreservation")
 	machineAnnotationsSynced := false
 	clone := machine.DeepCopy()
 	defer func() {
@@ -782,6 +783,7 @@ func (c *controller) manageMachinePreservation(ctx context.Context, machine *v1a
 	}
 	var effectivePreserveValue string
 	effectivePreserveValue, clone.Annotations = getEffectivePreservationAnnotations(nodeAnnotationValue, clone.Annotations)
+	klog.V(0).Infof("TESTING:getEffectivePreservationAnnotations %v", effectivePreserveValue)
 	if !machineutils.AllowedPreserveAnnotationValues.Has(effectivePreserveValue) {
 		if effectivePreserveValue == nodeAnnotationValue {
 			klog.Warningf("Preserve annotation value %q on node %q is invalid", effectivePreserveValue, nodeName)
