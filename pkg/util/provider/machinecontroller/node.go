@@ -392,10 +392,10 @@ func (c *controller) removePreservationRelatedAnnotationsOnNode(ctx context.Cont
 }
 
 // addCAScaleDownDisabledAnnotationOnNode adds the cluster-autoscaler annotation to disable scale down of preserved node
-func (c *controller) addCAScaleDownDisabledAnnotationOnNode(ctx context.Context, node *corev1.Node) (*corev1.Node, error) {
+func (c *controller) addCAScaleDownDisabledAnnotationOnNode(ctx context.Context, node *corev1.Node) error {
 	// Check if annotation already exists with correct value
 	if node.Annotations[autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationKey] == autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationValue {
-		return node, nil
+		return nil
 	}
 	// Add annotation to disable CA scale down.
 	// Also add annotation expressing that MCM is the one who added this annotation, so that it can be removed safely when preservation is stopped.
@@ -405,10 +405,10 @@ func (c *controller) addCAScaleDownDisabledAnnotationOnNode(ctx context.Context,
 	}
 	nodeCopy.Annotations[autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationKey] = autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationValue
 	nodeCopy.Annotations[autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationByMCMKey] = autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationByMCMValue
-	updatedNode, err := c.targetCoreClient.CoreV1().Nodes().Update(ctx, nodeCopy, metav1.UpdateOptions{})
+	_, err := c.targetCoreClient.CoreV1().Nodes().Update(ctx, nodeCopy, metav1.UpdateOptions{})
 	if err != nil {
 		klog.Errorf("error trying to update CA annotation on node %q: %v", node.Name, err)
-		return nil, err
+		return err
 	}
-	return updatedNode, nil
+	return nil
 }
