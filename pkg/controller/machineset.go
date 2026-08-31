@@ -910,28 +910,23 @@ func (c *controller) shouldFailedMachineBeTerminated(machine *v1alpha1.Machine) 
 		node      *corev1.Node
 		err       error
 	)
+	if machineutils.HasMachinePreservationExpired(machine) {
+		klog.V(3).Infof("Preservation of failed machine %q has timed out at %v.", machine.Name, machine.Status.CurrentStatus.PreserveExpiryTime)
+		return true
+	}
+
 	nodeName := machine.Labels[v1alpha1.NodeLabelKey]
-	// We don't return on error until it is determined whether the machine has valid preservation state
 	if nodeName != "" {
 		node, err = c.nodeLister.Get(nodeName)
 		if err != nil {
-			if !apierrors.IsNotFound(err) {
-				klog.Errorf("error finding preservation state for machine %q: %v. Proceeding with termination of the machine.", machine.Name, err)
-				return true
-			}
-			klog.Warningf("node %q not found for machine %q.", nodeName, machine.Name)
+			klog.Warningf("Error fetching node %q of machine %q: %v", nodeName, machine.Name, err)
 		} else {
 			nodeFound = true
 		}
 	}
 
-	if machineutils.IsMachinePreservationExpired(machine) {
-		klog.V(3).Infof("Preservation of failed machine %q has timed out at %v", machine.Name, machine.Status.CurrentStatus.PreserveExpiryTime)
-		return true
-	}
-
 	preserveInfo := machineutils.GetPreserveStateInfo(node, machine)
-	if machineutils.IsPositivePreserveValue(machineutils.GetEffectivePreservationAnnotations(&preserveInfo, nodeFound)) {
+	if machineutils.IsPreservationRequested(machineutils.GetEffectivePreservationAnnotations(&preserveInfo, nodeFound)) {
 		klog.V(3).Infof("Failed machine %q is either preserved or in the process of being preserved.", machine.Name)
 		return false
 	}

@@ -98,6 +98,17 @@ const (
 	PreserveMachineAnnotationKey = "node.machine.sapcloud.io/preserve"
 
 	// LastAppliedNodePreserveValueAnnotationKey is the annotation used to store the last preserve value applied by MCM
+	//
+	// This annotation is required to distinguish between a node's annotation being removed vs the node never having had a preserve annotation.
+	// If the former, preservation needs to be stopped, if the latter, the machine's preserve annotation needs to be enforced.
+	// Eg:
+	//	T1: Node and machine objects annotated with `when-failed` preserve annotation. Machine is in Failed phase and preserved.
+	//	T2 (T2 > T1): MCM went down.
+	//	T3 (T3 > T2): Node annotation was removed, to indicate that preservation should be stopped. MCM is still down.
+	//	T4 (T4 > T3): MCM came back up.
+	//	At T4 MCM sees a Node with no preserve annotation but a Machine with a preserve annotation.
+	//	MCM continues to preserve the machine, whereas it should have stopped preservation because the node annotation was removed at T3.
+	// To avoid this, MCM stores the last applied preserve value on the machine object, so that it can distinguish between a node annotation being removed vs having never been applied.
 	LastAppliedNodePreserveValueAnnotationKey = "node.machine.sapcloud.io/last-applied-node-preserve-value"
 
 	// PreserveMachineAnnotationValueNow is the annotation value used to explicitly request that
@@ -181,8 +192,8 @@ func IsMachineTriggeredForDeletion(m *v1alpha1.Machine) bool {
 	return m.Annotations[MachinePriority] == "1"
 }
 
-// IsMachinePreservationExpired checks if the preserve expiry time has passed for a machine
-func IsMachinePreservationExpired(m *v1alpha1.Machine) bool {
+// HasMachinePreservationExpired checks if the preserve expiry time has passed for a machine
+func HasMachinePreservationExpired(m *v1alpha1.Machine) bool {
 	t := m.Status.CurrentStatus.PreserveExpiryTime
 	return t != nil && !t.After(time.Now())
 }
@@ -240,10 +251,9 @@ func GetPreserveStateInfo(node *v1.Node, machine *v1alpha1.Machine) PreserveStat
 	return info
 }
 
-// IsPositivePreserveValue returns true when value is a preserve annotation value that requests
-// preservation (now/when-failed/auto-preserved). The value "false", empty, or any unrecognized
-// value is not a positive preserve value.
-func IsPositivePreserveValue(value string) bool {
+// IsPreservationRequested returns true when value is a preserve annotation value that requests
+// preservation (now/when-failed/auto-preserved).
+func IsPreservationRequested(value string) bool {
 	switch value {
 	case PreserveMachineAnnotationValueNow, PreserveMachineAnnotationValueWhenFailed, PreserveMachineAnnotationValueAutoPreserved:
 		return true
@@ -253,19 +263,6 @@ func IsPositivePreserveValue(value string) bool {
 }
 
 // GetEffectivePreservationAnnotations returns the effective preservation value.
-//
-// If there is no active node annotation AND no previously-applied node annotation,
-// enforce machine's preserve annotation.
-// Otherwise, the node annotation takes precedence (even if now empty/removed).
-//
-// lastAppliedNodeValue is required to handle the following scenario:
-//
-//	T1: Node and Machine both have the same annotation with the same value. (MCM is up and running).
-//	T2 (T2 > T1): MCM went down.
-//	T3 (T3 > T2): Node annotation was removed.
-//	T4 (T4 > T3): MCM came back up.
-//	At T4 it sees a Node with no preserve annotation but a Machine with a preserve annotation.
-//	It continues to preserve the machine.
 func GetEffectivePreservationAnnotations(info *PreserveStateInfo, nodeFound bool) string {
 	// If the node cannot be found, nodeValue is "".
 	// In this case, we want the machine's annotation value to be enforced.

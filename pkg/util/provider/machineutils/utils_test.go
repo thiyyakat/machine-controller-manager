@@ -285,10 +285,10 @@ var _ = Describe("machineutils", func() {
 		)
 	})
 
-	Describe("#IsPositivePreserveValue", func() {
-		DescribeTable("IsPositivePreserveValue scenarios",
+	Describe("#IsPreservationRequested", func() {
+		DescribeTable("IsPreservationRequested scenarios",
 			func(value string, expected bool) {
-				Expect(IsPositivePreserveValue(value)).To(Equal(expected))
+				Expect(IsPreservationRequested(value)).To(Equal(expected))
 			},
 			Entry("preserve=now is a positive preserve value", PreserveMachineAnnotationValueNow, true),
 			Entry("preserve=when-failed is a positive preserve value", PreserveMachineAnnotationValueWhenFailed, true),
@@ -296,6 +296,24 @@ var _ = Describe("machineutils", func() {
 			Entry("preserve=false is not a positive preserve value", PreserveMachineAnnotationValueFalse, false),
 			Entry("empty value is not a positive preserve value", "", false),
 			Entry("unrecognized value is not a positive preserve value", "some-invalid-value", false),
+		)
+	})
+
+	Describe("#HasMachinePreservationExpired", func() {
+		DescribeTable("HasMachinePreservationExpired scenarios",
+			func(preserveExpiryTime *metav1.Time, expected bool) {
+				machine := &v1alpha1.Machine{
+					Status: v1alpha1.MachineStatus{
+						CurrentStatus: v1alpha1.CurrentStatus{
+							PreserveExpiryTime: preserveExpiryTime,
+						},
+					},
+				}
+				Expect(HasMachinePreservationExpired(machine)).To(Equal(expected))
+			},
+			Entry("nil preserveExpiryTime has not expired", nil, false),
+			Entry("preserveExpiryTime in the past has expired", &metav1.Time{Time: metav1.Now().Add(-1 * time.Hour)}, true),
+			Entry("preserveExpiryTime in the future has not expired", &metav1.Time{Time: metav1.Now().Add(1 * time.Hour)}, false),
 		)
 	})
 })

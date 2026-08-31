@@ -780,6 +780,9 @@ func (c *controller) manageMachinePreservation(ctx context.Context, machine *v1a
 	nodeName := machine.Labels[v1alpha1.NodeLabelKey]
 	if nodeName != "" {
 		node, err = c.nodeLister.Get(nodeName) // We don't return on error immediately because we need to determine whether the machine has valid preservation state
+		if err == nil {
+			nodeFound = true
+		}
 	}
 	preserveInfo := machineutils.GetPreserveStateInfo(node, machine)
 	if preserveInfo.MachineAnnotated && !machineutils.AllowedPreserveAnnotationValues.Has(preserveInfo.MachineValue) {
@@ -805,8 +808,6 @@ func (c *controller) manageMachinePreservation(ctx context.Context, machine *v1a
 		}
 		err = nil
 		klog.Warningf("Couldn't find node %q for machine %q", nodeName, machine.Name)
-	} else {
-		nodeFound = true
 	}
 
 	// Note: when the backing node cannot be found, we assume the machine's annotation value needs to be enforced to enable
@@ -822,7 +823,7 @@ func (c *controller) manageMachinePreservation(ctx context.Context, machine *v1a
 		clone, err = c.stopPreservationIfActive(ctx, clone, removeAnnotations)
 	case machineutils.PreserveMachineAnnotationValueWhenFailed:
 		// on timing out, remove preserve annotation to prevent incorrect re-preservation
-		if machineutils.IsMachinePreservationExpired(clone) {
+		if machineutils.HasMachinePreservationExpired(clone) {
 			removeAnnotations = true
 			clone, err = c.stopPreservationIfActive(ctx, clone, removeAnnotations)
 		} else if !machineutils.IsMachineFailed(clone) {
@@ -831,7 +832,7 @@ func (c *controller) manageMachinePreservation(ctx context.Context, machine *v1a
 			clone, err = c.preserveMachine(ctx, clone, effectivePreserveValue)
 		}
 	case machineutils.PreserveMachineAnnotationValueNow:
-		if machineutils.IsMachinePreservationExpired(clone) {
+		if machineutils.HasMachinePreservationExpired(clone) {
 			// on timing out, remove preserve annotation to prevent incorrect re-preservation
 			removeAnnotations = true
 			clone, err = c.stopPreservationIfActive(ctx, clone, removeAnnotations)
@@ -839,7 +840,7 @@ func (c *controller) manageMachinePreservation(ctx context.Context, machine *v1a
 			clone, err = c.preserveMachine(ctx, clone, effectivePreserveValue)
 		}
 	case machineutils.PreserveMachineAnnotationValueAutoPreserved:
-		if !machineutils.IsMachineFailed(clone) || machineutils.IsMachinePreservationExpired(clone) {
+		if !machineutils.IsMachineFailed(clone) || machineutils.HasMachinePreservationExpired(clone) {
 			// To prevent incorrect re-preservation of a recovered, previously auto-preserved machine on future failures
 			// (since the autoPreserveFailedMachineCount maintained by the machineSetController, may have changed),
 			// in addition to stopping preservation, we also remove the preservation annotation on the machine.
