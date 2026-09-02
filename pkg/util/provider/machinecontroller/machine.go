@@ -821,14 +821,14 @@ func (c *controller) manageMachinePreservation(ctx context.Context, machine *v1a
 	// effectivePreserveValue == "" implies the preservation annotation was deleted to indicate that
 	// preservation must be stopped
 	case "", machineutils.PreserveMachineAnnotationValueFalse:
-		clone, err = c.stopPreservationIfActive(ctx, clone, removePreserveAnnotations, true)
+		clone, err = c.stopPreservation(ctx, clone, removePreserveAnnotations, false)
 	case machineutils.PreserveMachineAnnotationValueWhenFailed:
 		// on timing out, remove preserve annotation to prevent incorrect re-preservation
 		if machineutils.IsMachinePreservationExpired(clone) {
 			removePreserveAnnotations = true
-			clone, err = c.stopPreservationIfActive(ctx, clone, removePreserveAnnotations, true)
+			clone, err = c.stopPreservation(ctx, clone, removePreserveAnnotations, false)
 		} else if !machineutils.IsMachineFailed(clone) {
-			clone, err = c.stopPreservationIfActive(ctx, clone, removePreserveAnnotations, true)
+			clone, err = c.stopPreservation(ctx, clone, removePreserveAnnotations, false)
 		} else {
 			clone, err = c.preserveMachine(ctx, clone, effectivePreserveValue)
 		}
@@ -836,7 +836,7 @@ func (c *controller) manageMachinePreservation(ctx context.Context, machine *v1a
 		if machineutils.IsMachinePreservationExpired(clone) {
 			// on timing out, remove preserve annotation to prevent incorrect re-preservation
 			removePreserveAnnotations = true
-			clone, err = c.stopPreservationIfActive(ctx, clone, removePreserveAnnotations, true)
+			clone, err = c.stopPreservation(ctx, clone, removePreserveAnnotations, false)
 		} else {
 			clone, err = c.preserveMachine(ctx, clone, effectivePreserveValue)
 		}
@@ -846,7 +846,7 @@ func (c *controller) manageMachinePreservation(ctx context.Context, machine *v1a
 			// (since the autoPreserveFailedMachineCount maintained by the machineSetController, may have changed),
 			// in addition to stopping preservation, we also remove the preservation annotation on the machine.
 			removePreserveAnnotations = true
-			clone, err = c.stopPreservationIfActive(ctx, clone, removePreserveAnnotations, true)
+			clone, err = c.stopPreservation(ctx, clone, removePreserveAnnotations, false)
 		} else {
 			clone, err = c.preserveMachine(ctx, clone, effectivePreserveValue)
 		}

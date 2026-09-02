@@ -105,3 +105,19 @@ func UpdateNodeConditions(ctx context.Context, c clientset.Interface, nodeName s
 	}
 	return updatedNode, nil
 }
+
+// RemoveConditionOnNode removes the condition of the given type from the given node's status, if present.
+func RemoveConditionOnNode(ctx context.Context, c clientset.Interface, node *v1.Node, conditionType v1.NodeConditionType) (*v1.Node, error) {
+	if GetCondition(node, conditionType) == nil {
+		return node, nil
+	}
+	newNode := node.DeepCopy()
+	newConditions := make([]v1.NodeCondition, 0, len(node.Status.Conditions))
+	for _, cond := range node.Status.Conditions {
+		if cond.Type != conditionType {
+			newConditions = append(newConditions, cond)
+		}
+	}
+	newNode.Status.Conditions = newConditions
+	return UpdateNodeConditions(ctx, c, node.Name, node, newNode)
+}

@@ -3815,9 +3815,7 @@ var _ = Describe("machine_util", func() {
 			Expect(updatedNode.Annotations).NotTo(HaveKey(machineutils.PreserveMachineAnnotationKey))
 
 			preservedCondition := nodeops.GetCondition(updatedNode, machinev1.NodePreserved)
-			Expect(preservedCondition).ToNot(BeNil())
-			Expect(preservedCondition.Status).To(Equal(corev1.ConditionFalse))
-			Expect(preservedCondition.Reason).To(Equal(machinev1.PreservationStopped))
+			Expect(preservedCondition).To(BeNil())
 
 			hasPreservationTaint := false
 			for _, t := range updatedNode.Spec.Taints {
@@ -4464,13 +4462,15 @@ var _ = Describe("machine_util", func() {
 			}),
 		)
 	})
-	Describe("#stopPreservationIfActive", func() {
+	Describe("#stopPreservation", func() {
 		type setup struct {
 			nodeName                 string
 			removePreserveAnnotation bool
 			machinePhase             machinev1.MachinePhase
 			isUserCordoned           bool
 			isTainted                bool
+			clearStateForInPlace     bool
+			preserveExpiryTimeUnset  bool
 		}
 		type expect struct {
 			err error
@@ -4479,7 +4479,7 @@ var _ = Describe("machine_util", func() {
 			setup  setup
 			expect expect
 		}
-		DescribeTable("##stopPreservationIfActive behaviour scenarios",
+		DescribeTable("##stopPreservation behaviour scenarios",
 			func(tc *testCase) {
 				stop := make(chan struct{})
 				defer close(stop)
@@ -4491,18 +4491,25 @@ var _ = Describe("machine_util", func() {
 				if machinePhase == "" {
 					machinePhase = machinev1.MachineFailed
 				}
+				var preserveExpiryTime *metav1.Time
+				if !tc.setup.preserveExpiryTimeUnset {
+					preserveExpiryTime = &metav1.Time{Time: time.Now().Add(10 * time.Minute)}
+				}
 				machine := &machinev1.Machine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "machine-1",
 						Namespace: testNamespace,
 						Labels:    map[string]string{},
+						Annotations: map[string]string{
+							machineutils.PreserveMachineAnnotationKey: machineutils.PreserveMachineAnnotationValueNow,
+						},
 					},
 					Spec: machinev1.MachineSpec{},
 					Status: machinev1.MachineStatus{
 						CurrentStatus: machinev1.CurrentStatus{
 							Phase:              machinePhase,
 							LastUpdateTime:     metav1.Now(),
-							PreserveExpiryTime: &metav1.Time{Time: time.Now().Add(10 * time.Minute)},
+							PreserveExpiryTime: preserveExpiryTime,
 						},
 					},
 				}
@@ -4512,8 +4519,9 @@ var _ = Describe("machine_util", func() {
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node-1",
 							Annotations: map[string]string{
-								machineutils.PreserveMachineAnnotationKey:                  machineutils.PreserveMachineAnnotationValueNow,
-								autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationKey: autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationValue,
+								machineutils.PreserveMachineAnnotationKey:                       machineutils.PreserveMachineAnnotationValueNow,
+								autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationKey:      autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationValue,
+								autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationByMCMKey: autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationByMCMValue,
 							},
 						},
 						Spec: corev1.NodeSpec{Unschedulable: tc.setup.isUserCordoned},
@@ -4543,7 +4551,7 @@ var _ = Describe("machine_util", func() {
 				c, trackers := createController(stop, testNamespace, controlMachineObjects, nil, targetCoreObjects, nil, false)
 				defer trackers.Stop()
 				waitForCacheSync(stop, c)
-				_, err := c.stopPreservationIfActive(context.TODO(), machine, tc.setup.removePreserveAnnotation, false)
+				_, err := c.stopPreservation(context.TODO(), machine, tc.setup.removePreserveAnnotation, tc.setup.clearStateForInPlace)
 				if tc.expect.err != nil {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(Equal(tc.expect.err.Error()))
@@ -4552,7 +4560,23 @@ var _ = Describe("machine_util", func() {
 				Expect(err).To(BeNil())
 				updatedMachine, getErr := c.controlMachineClient.Machines(testNamespace).Get(context.TODO(), machine.Name, metav1.GetOptions{})
 				Expect(getErr).To(BeNil())
+
+				// When preservation was never started (no expiry) and this is not the in-place clear path, the guard
+				// short-circuits: nothing is cleared and the machine is returned unchanged.
+				if tc.setup.preserveExpiryTimeUnset && !tc.setup.clearStateForInPlace {
+					Expect(updatedMachine.Annotations).To(HaveKey(machineutils.PreserveMachineAnnotationKey))
+					if tc.setup.nodeName != "" && tc.setup.nodeName != "no-backing-node" && tc.setup.nodeName != "err-backing-node" {
+						unchangedNode, nodeErr := c.targetCoreClient.CoreV1().Nodes().Get(context.TODO(), tc.setup.nodeName, metav1.GetOptions{})
+						Expect(nodeErr).To(BeNil())
+						Expect(unchangedNode.Annotations).To(HaveKey(machineutils.PreserveMachineAnnotationKey))
+					}
+					return
+				}
+
 				Expect(updatedMachine.Status.CurrentStatus.PreserveExpiryTime.IsZero()).To(BeTrue())
+				if tc.setup.removePreserveAnnotation {
+					Expect(updatedMachine.Annotations).NotTo(HaveKey(machineutils.PreserveMachineAnnotationKey))
+				}
 
 				if machine.Labels[machinev1.NodeLabelKey] == "" || machine.Labels[machinev1.NodeLabelKey] == "no-backing-node" {
 					return
@@ -4560,13 +4584,19 @@ var _ = Describe("machine_util", func() {
 				updatedNode, getErr := c.targetCoreClient.CoreV1().Nodes().Get(context.TODO(), tc.setup.nodeName, metav1.GetOptions{})
 				Expect(getErr).To(BeNil())
 				updatedNodeCondition := nodeops.GetCondition(updatedNode, machinev1.NodePreserved)
-				Expect(updatedNodeCondition).ToNot(BeNil())
-				Expect(updatedNodeCondition.Status).To(Equal(corev1.ConditionFalse))
-				Expect(updatedNodeCondition.Reason).To(Equal(machinev1.PreservationStopped))
+				Expect(updatedNodeCondition).To(BeNil())
 				if tc.setup.removePreserveAnnotation {
 					Expect(updatedNode.Annotations).NotTo(HaveKey(machineutils.PreserveMachineAnnotationKey))
 				} else {
 					Expect(updatedNode.Annotations).To(HaveKey(machineutils.PreserveMachineAnnotationKey))
+				}
+				// The CA scale-down-disabled annotations are retained on the in-place clear path and removed otherwise.
+				if tc.setup.clearStateForInPlace {
+					Expect(updatedNode.Annotations).To(HaveKey(autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationByMCMKey))
+					Expect(updatedNode.Annotations).To(HaveKey(autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationKey))
+				} else {
+					Expect(updatedNode.Annotations).NotTo(HaveKey(autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationByMCMKey))
+					Expect(updatedNode.Annotations).NotTo(HaveKey(autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationKey))
 				}
 				Expect(updatedNode.Spec.Unschedulable).To(Equal(tc.setup.isUserCordoned))
 				if tc.setup.isTainted {
@@ -4632,6 +4662,39 @@ var _ = Describe("machine_util", func() {
 					machinePhase:   machinev1.MachineRunning,
 					isUserCordoned: true,
 					isTainted:      true,
+				},
+				expect: expect{
+					err: nil,
+				},
+			}),
+			Entry("in-place clear: preserve state is cleared even when preservation has not started (no expiry), and CA annotations are retained", &testCase{
+				setup: setup{
+					nodeName:                 "node-1",
+					removePreserveAnnotation: true,
+					clearStateForInPlace:     true,
+					preserveExpiryTimeUnset:  true,
+				},
+				expect: expect{
+					err: nil,
+				},
+			}),
+			Entry("in-place clear: preserve state of an actively-preserved machine is cleared while CA annotations are retained", &testCase{
+				setup: setup{
+					nodeName:                 "node-1",
+					removePreserveAnnotation: true,
+					clearStateForInPlace:     true,
+					isTainted:                true,
+				},
+				expect: expect{
+					err: nil,
+				},
+			}),
+			Entry("non-in-place: machine annotated but preservation not started (no expiry) is a no-op due to the expiry guard", &testCase{
+				setup: setup{
+					nodeName:                 "node-1",
+					removePreserveAnnotation: true,
+					clearStateForInPlace:     false,
+					preserveExpiryTimeUnset:  true,
 				},
 				expect: expect{
 					err: nil,

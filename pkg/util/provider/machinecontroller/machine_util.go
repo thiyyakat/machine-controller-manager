@@ -393,7 +393,7 @@ func (c *controller) inPlaceUpdate(ctx context.Context, machine *v1alpha1.Machin
 		}
 		if isMachinePreservationBound(&preserveState) {
 			clone = machine.DeepCopy()
-			clone, err = c.stopPreservationIfActive(ctx, clone, true, false)
+			clone, err = c.stopPreservation(ctx, clone, true, true)
 			if err != nil {
 				return machineutils.ShortRetry, err
 			}
@@ -2453,12 +2453,15 @@ func (c *controller) preserveMachine(ctx context.Context, machine *v1alpha1.Mach
 	return machine, nil
 }
 
-// stopPreservationIfActive stops the preservation of the machine and node, if preserved, and returns true if machine object has been updated
-func (c *controller) stopPreservationIfActive(ctx context.Context, machine *v1alpha1.Machine, removePreservationAnnotations bool, removeCAAnnotations bool) (*v1alpha1.Machine, error) {
+// stopPreservation stops the preservation of the machine and node, if preserved, and returns true if machine object has been updated.
+// When updateOngoing is true (the in-place update path), the teardown proceeds even if PreserveExpiryTime is not set, so that all
+// preservation—related state is removed from the machine. However,the cluster-autoscaler scale-down-disabled annotation is retained
+// so the node is not scaled down mid-rollout.
+func (c *controller) stopPreservation(ctx context.Context, machine *v1alpha1.Machine, removePreservationAnnotations bool, updateOngoing bool) (*v1alpha1.Machine, error) {
 	var err error
 	// removal of preserveExpiryTime is the last step of stopping preservation
 	// therefore, if preserveExpiryTime is not set, machine is not preserved
-	if machine.Status.CurrentStatus.PreserveExpiryTime == nil {
+	if !updateOngoing && machine.Status.CurrentStatus.PreserveExpiryTime == nil {
 		return machine, nil
 	}
 
@@ -2466,7 +2469,7 @@ func (c *controller) stopPreservationIfActive(ctx context.Context, machine *v1al
 	// if there is no backing node (such as in the case of self-hosted shoots), only machine object should be updated
 	if nodeName == "" {
 		// remove annotation from machine if needed
-		if removePreservationAnnotations {
+		if updateOngoing || removePreservationAnnotations {
 			machine, err = c.removePreserveAnnotationOnMachine(ctx, machine)
 			if err != nil {
 				return nil, err
@@ -2486,7 +2489,7 @@ func (c *controller) stopPreservationIfActive(ctx context.Context, machine *v1al
 		// If node is not found and error is simply returned, then preservation will never be stopped on the machine.
 		if apierrors.IsNotFound(err) {
 			klog.Warningf("Node %q of machine %q not found. Proceeding to stop preservation on machine.", nodeName, machine.Name)
-			if removePreservationAnnotations {
+			if updateOngoing || removePreservationAnnotations {
 				machine, err = c.removePreserveAnnotationOnMachine(ctx, machine)
 				if err != nil {
 					return nil, err
@@ -2502,25 +2505,18 @@ func (c *controller) stopPreservationIfActive(ctx context.Context, machine *v1al
 		klog.Errorf("error trying to get node %q of machine %q: %v. Retrying.", nodeName, machine.Name, err)
 		return nil, err
 	}
-	// prepare NodeCondition to set preservation as stopped
-	preservedConditionFalse := v1.NodeCondition{
-		Type:               v1alpha1.NodePreserved,
-		Status:             v1.ConditionFalse,
-		LastTransitionTime: metav1.Now(),
-		Reason:             v1alpha1.PreservationStopped,
-	}
-	// Step 1: change node condition to reflect that preservation has stopped
-	updatedNode, err := nodeops.AddOrUpdateConditionsOnNode(ctx, c.targetCoreClient, node.Name, preservedConditionFalse)
+	// Step 1: remove the NodePreserved condition from the node
+	updatedNode, err := nodeops.RemoveConditionOnNode(ctx, c.targetCoreClient, node, v1alpha1.NodePreserved)
 	if err != nil {
 		return nil, err
 	}
-	// Step 2: remove annotations from node
-	updatedNode, err = c.removePreservationRelatedAnnotationsOnNode(ctx, updatedNode, removePreservationAnnotations, removeCAAnnotations)
+	// Step 2: remove annotations from node. The CA scale-down-disabled annotation is retained during in-place updates.
+	updatedNode, err = c.removePreservationRelatedAnnotationsOnNode(ctx, updatedNode, removePreservationAnnotations, !updateOngoing)
 	if err != nil {
 		return nil, err
 	}
 	// Step 3: remove annotation from machine if needed
-	if removePreservationAnnotations {
+	if updateOngoing || removePreservationAnnotations {
 		machine, err = c.removePreserveAnnotationOnMachine(ctx, machine)
 		if err != nil {
 			return nil, err
