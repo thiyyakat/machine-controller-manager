@@ -52,7 +52,6 @@ func (dc *controller) rolloutInPlace(ctx context.Context, d *v1alpha1.MachineDep
 			klog.Errorf("failed to add label %s on all machine sets. Error: %v", machineutils.LabelKeyMachineSetScaleUpDisabled, err)
 			return err
 		}
-
 		// Add the annotation on the all machinesets if there are any old-machinesets and not scaled-to-zero.
 		// This also helps in annotating the node under new-machineset, incase the reconciliation is failing in next
 		// status-rollout steps.
@@ -64,6 +63,9 @@ func (dc *controller) rolloutInPlace(ctx context.Context, d *v1alpha1.MachineDep
 				klog.Errorf("failed to add annotations %s on all nodes. Error: %v", clusterAutoscalerScaleDownAnnotations, err)
 				return err
 			}
+		}
+		if err = dc.enableOrDisableAutoPreservation(ctx, allMachineSets, true); err != nil {
+			return err
 		}
 	}
 
@@ -121,7 +123,11 @@ func (dc *controller) rolloutInPlace(ctx context.Context, d *v1alpha1.MachineDep
 				return err
 			}
 		}
-		if err := dc.cleanupMachineDeployment(ctx, oldMachineSets, d); err != nil {
+		remainingOldMachineSets, err := dc.cleanupMachineDeployment(ctx, oldMachineSets, d)
+		if err != nil {
+			return err
+		}
+		if err = dc.enableOrDisableAutoPreservation(ctx, append(remainingOldMachineSets, newMachineSet), false); err != nil {
 			return err
 		}
 	}

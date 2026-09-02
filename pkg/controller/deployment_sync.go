@@ -37,6 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 )
 
@@ -66,7 +67,7 @@ func (dc *controller) sync(ctx context.Context, d *v1alpha1.MachineDeployment, i
 
 	// Clean up the deployment when it's paused and no rollback is in flight.
 	if d.Spec.Paused && d.Spec.RollbackTo == nil {
-		if err := dc.cleanupMachineDeployment(ctx, oldISs, d); err != nil {
+		if _, err := dc.cleanupMachineDeployment(ctx, oldISs, d); err != nil {
 			return err
 		}
 	}
@@ -567,9 +568,11 @@ func (dc *controller) scaleMachineSet(ctx context.Context, is *v1alpha1.MachineS
 // cleanupDeployment is responsible for cleaning up a deployment ie. retains all but the latest N old machine sets
 // where N=d.Spec.RevisionHistoryLimit. Old machine sets are older versions of the machinetemplate of a deployment kept
 // around by default 1) for historical reasons and 2) for the ability to rollback a deployment.
-func (dc *controller) cleanupMachineDeployment(ctx context.Context, oldISs []*v1alpha1.MachineSet, deployment *v1alpha1.MachineDeployment) error {
+// cleanupMachineDeployment deletes old machine sets that exceed the revision history limit and returns
+// the old machine sets that survived the cleanup.
+func (dc *controller) cleanupMachineDeployment(ctx context.Context, oldISs []*v1alpha1.MachineSet, deployment *v1alpha1.MachineDeployment) ([]*v1alpha1.MachineSet, error) {
 	if deployment.Spec.RevisionHistoryLimit == nil {
-		return nil
+		return oldISs, nil
 	}
 
 	// Avoid deleting machine set with deletion timestamp set
@@ -580,12 +583,13 @@ func (dc *controller) cleanupMachineDeployment(ctx context.Context, oldISs []*v1
 
 	diff := int32(len(cleanableISes)) - *deployment.Spec.RevisionHistoryLimit // #nosec G115 (CWE-190) -- number will never reach MaxInt32, and len() cannot be negative
 	if diff <= 0 {
-		return nil
+		return oldISs, nil
 	}
 
 	sort.Sort(MachineSetsByCreationTimestamp(cleanableISes))
 	klog.V(4).Infof("Looking to cleanup old machine sets for deployment %q", deployment.Name)
 
+	deleted := sets.New[string]()
 	for i := range diff {
 		is := cleanableISes[i]
 		// Avoid delete machine set with non-zero replica counts
@@ -596,11 +600,19 @@ func (dc *controller) cleanupMachineDeployment(ctx context.Context, oldISs []*v1
 		if err := dc.controlMachineClient.MachineSets(is.Namespace).Delete(ctx, is.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 			// Return error instead of aggregating and continuing DELETEs on the theory
 			// that we may be overloading the api server.
-			return err
+			return oldISs, err
+		}
+		deleted.Insert(is.Name)
+	}
+
+	remaining := make([]*v1alpha1.MachineSet, 0, len(oldISs))
+	for _, is := range oldISs {
+		if is != nil && !deleted.Has(is.Name) {
+			remaining = append(remaining, is)
 		}
 	}
 
-	return nil
+	return remaining, nil
 }
 
 // syncDeploymentStatus checks if the status is up-to-date and sync it if necessary

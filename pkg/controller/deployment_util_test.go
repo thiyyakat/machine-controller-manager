@@ -7,6 +7,7 @@ package controller
 import (
 	"context"
 	machinev1 "github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
+	"github.com/gardener/machine-controller-manager/pkg/util/provider/machineutils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -769,5 +770,151 @@ var _ = Describe("deployment_util", func() {
 				},
 			}),
 		)
+	})
+})
+
+var _ = Describe("auto-preservation toggling on machine sets", func() {
+	newMachineSetWithAnnotations := func(name string, annotations map[string]string) *machinev1.MachineSet {
+		return &machinev1.MachineSet{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "MachineSet",
+				APIVersion: "machine.sapcloud.io/v1alpha1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        name,
+				Namespace:   testNamespace,
+				Annotations: annotations,
+			},
+		}
+	}
+
+	getMachineSet := func(c *controller, name string) *machinev1.MachineSet {
+		machineSet, err := c.controlMachineClient.MachineSets(testNamespace).Get(context.TODO(), name, metav1.GetOptions{})
+		Expect(err).ShouldNot(HaveOccurred())
+		return machineSet
+	}
+
+	Describe("#enableOrDisableAutoPreservation (disable)", func() {
+		It("should add the auto-preservation-disabled annotation on all machine sets, retaining existing annotations", func() {
+			stop := make(chan struct{})
+			defer close(stop)
+
+			ms1 := newMachineSetWithAnnotations("ms-1", nil)
+			ms2 := newMachineSetWithAnnotations("ms-2", map[string]string{"existing": "value"})
+
+			c, trackers := createController(stop, testNamespace, []runtime.Object{ms1, ms2}, nil, nil)
+			defer trackers.Stop()
+			waitForCacheSync(stop, c)
+
+			err := c.enableOrDisableAutoPreservation(context.TODO(), []*machinev1.MachineSet{ms1, ms2}, true)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			updatedMS1 := getMachineSet(c, "ms-1")
+			Expect(updatedMS1.Annotations).To(HaveKeyWithValue(machineutils.AutoPreservationDisabledAnnotationKey, "true"))
+
+			updatedMS2 := getMachineSet(c, "ms-2")
+			Expect(updatedMS2.Annotations).To(HaveKeyWithValue(machineutils.AutoPreservationDisabledAnnotationKey, "true"))
+			Expect(updatedMS2.Annotations).To(HaveKeyWithValue("existing", "value"))
+		})
+
+		It("should be idempotent when the annotation is already present", func() {
+			stop := make(chan struct{})
+			defer close(stop)
+
+			ms := newMachineSetWithAnnotations("ms-1", map[string]string{
+				machineutils.AutoPreservationDisabledAnnotationKey: "true",
+			})
+
+			c, trackers := createController(stop, testNamespace, []runtime.Object{ms}, nil, nil)
+			defer trackers.Stop()
+			waitForCacheSync(stop, c)
+
+			err := c.enableOrDisableAutoPreservation(context.TODO(), []*machinev1.MachineSet{ms}, true)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			updatedMS := getMachineSet(c, "ms-1")
+			Expect(updatedMS.Annotations).To(HaveKeyWithValue(machineutils.AutoPreservationDisabledAnnotationKey, "true"))
+		})
+
+		It("should skip nil machine sets and not fail on a machine set missing from the API server", func() {
+			stop := make(chan struct{})
+			defer close(stop)
+
+			present := newMachineSetWithAnnotations("ms-present", nil)
+			missing := newMachineSetWithAnnotations("ms-missing", nil)
+
+			c, trackers := createController(stop, testNamespace, []runtime.Object{present}, nil, nil)
+			defer trackers.Stop()
+			waitForCacheSync(stop, c)
+
+			err := c.enableOrDisableAutoPreservation(context.TODO(), []*machinev1.MachineSet{nil, present, missing}, true)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			updatedMS := getMachineSet(c, "ms-present")
+			Expect(updatedMS.Annotations).To(HaveKeyWithValue(machineutils.AutoPreservationDisabledAnnotationKey, "true"))
+		})
+	})
+
+	Describe("#enableOrDisableAutoPreservation (enable)", func() {
+		It("should remove the auto-preservation-disabled annotation while retaining other annotations", func() {
+			stop := make(chan struct{})
+			defer close(stop)
+
+			ms := newMachineSetWithAnnotations("ms-1", map[string]string{
+				machineutils.AutoPreservationDisabledAnnotationKey: "true",
+				"existing": "value",
+			})
+
+			c, trackers := createController(stop, testNamespace, []runtime.Object{ms}, nil, nil)
+			defer trackers.Stop()
+			waitForCacheSync(stop, c)
+
+			err := c.enableOrDisableAutoPreservation(context.TODO(), []*machinev1.MachineSet{ms}, false)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			updatedMS := getMachineSet(c, "ms-1")
+			Expect(updatedMS.Annotations).ShouldNot(HaveKey(machineutils.AutoPreservationDisabledAnnotationKey))
+			Expect(updatedMS.Annotations).To(HaveKeyWithValue("existing", "value"))
+		})
+
+		It("should be a no-op for nil machine sets and sets without the annotation", func() {
+			stop := make(chan struct{})
+			defer close(stop)
+
+			unannotated := newMachineSetWithAnnotations("ms-1", map[string]string{"existing": "value"})
+
+			c, trackers := createController(stop, testNamespace, []runtime.Object{unannotated}, nil, nil)
+			defer trackers.Stop()
+			waitForCacheSync(stop, c)
+
+			err := c.enableOrDisableAutoPreservation(context.TODO(), []*machinev1.MachineSet{nil, unannotated}, false)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			updatedMS := getMachineSet(c, "ms-1")
+			Expect(updatedMS.Annotations).To(HaveKeyWithValue("existing", "value"))
+			Expect(updatedMS.Annotations).ShouldNot(HaveKey(machineutils.AutoPreservationDisabledAnnotationKey))
+		})
+
+		It("should not fail on an annotated machine set missing from the API server", func() {
+			stop := make(chan struct{})
+			defer close(stop)
+
+			present := newMachineSetWithAnnotations("ms-present", map[string]string{
+				machineutils.AutoPreservationDisabledAnnotationKey: "true",
+			})
+			missing := newMachineSetWithAnnotations("ms-missing", map[string]string{
+				machineutils.AutoPreservationDisabledAnnotationKey: "true",
+			})
+
+			c, trackers := createController(stop, testNamespace, []runtime.Object{present}, nil, nil)
+			defer trackers.Stop()
+			waitForCacheSync(stop, c)
+
+			err := c.enableOrDisableAutoPreservation(context.TODO(), []*machinev1.MachineSet{present, missing}, false)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			updatedMS := getMachineSet(c, "ms-present")
+			Expect(updatedMS.Annotations).ShouldNot(HaveKey(machineutils.AutoPreservationDisabledAnnotationKey))
+		})
 	})
 })

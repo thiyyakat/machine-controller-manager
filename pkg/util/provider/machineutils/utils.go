@@ -122,6 +122,10 @@ const (
 	// NodePreservedTaintKey is used to cordon a node when a Failed machine is preserved.
 	// This taint is added to the node before draining it, and removed when the machine is unpreserved.
 	NodePreservedTaintKey = "node.machine.sapcloud.io/preserved"
+
+	// AutoPreservationDisabledAnnotationKey is the annotation key used to indicate that
+	// auto-preservation is disabled on a machine set.
+	AutoPreservationDisabledAnnotationKey = "node.machine.sapcloud.io/auto-preservation-disabled"
 )
 
 // AllowedPreserveAnnotationValues contains the allowed values for the preserve annotation

@@ -480,6 +480,11 @@ func createController(
 		Recorder:             controller.recorder,
 	}
 
+	controller.machineSetControl = RealMachineSetControl{
+		controlMachineClient: fakeTypedMachineClient,
+		Recorder:             controller.recorder,
+	}
+
 	return controller, fakeObjectTrackers
 }
 

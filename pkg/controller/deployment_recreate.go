@@ -59,6 +59,9 @@ func (dc *controller) rolloutRecreate(ctx context.Context, d *v1alpha1.MachineDe
 				klog.Errorf("Failed to add %s on all nodes. Error: %s", clusterAutoscalerScaleDownAnnotations, err)
 				return err
 			}
+			if err = dc.enableOrDisableAutoPreservation(ctx, allISs, true); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -100,7 +103,11 @@ func (dc *controller) rolloutRecreate(ctx context.Context, d *v1alpha1.MachineDe
 				return err
 			}
 		}
-		if err := dc.cleanupMachineDeployment(ctx, oldISs, d); err != nil {
+		remainingOldISs, err := dc.cleanupMachineDeployment(ctx, oldISs, d)
+		if err != nil {
+			return err
+		}
+		if err = dc.enableOrDisableAutoPreservation(ctx, append(remainingOldISs, newIS), false); err != nil {
 			return err
 		}
 	}

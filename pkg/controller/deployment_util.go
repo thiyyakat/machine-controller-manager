@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/gardener/machine-controller-manager/pkg/util/nodeops"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	v1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
@@ -1417,4 +1418,32 @@ func MergeStringMaps[T any](oldMap map[string]T, newMaps ...map[string]T) map[st
 	}
 
 	return out
+}
+
+func (dc *controller) enableOrDisableAutoPreservation(ctx context.Context, MachineSets []*v1alpha1.MachineSet, disable bool) error {
+	action := "enable"
+	patchBytes := []byte(fmt.Sprintf(`{"metadata":{"annotations":{%q:null}}}`, machineutils.AutoPreservationDisabledAnnotationKey))
+	if disable {
+		action = "disable"
+		patchBytes = []byte(fmt.Sprintf(`{"metadata":{"annotations":{%q:"true"}}}`, machineutils.AutoPreservationDisabledAnnotationKey))
+	}
+	for _, machineSet := range MachineSets {
+		if machineSet == nil {
+			continue
+		}
+		alreadyDisabled := machineSet.Annotations[machineutils.AutoPreservationDisabledAnnotationKey] == "true"
+		// Skip if the machine set is already in the desired state.
+		if disable == alreadyDisabled {
+			continue
+		}
+		if err := dc.machineSetControl.PatchMachineSet(ctx, machineSet.Namespace, machineSet.Name, patchBytes); err != nil {
+			if !apierrors.IsNotFound(err) {
+				klog.Errorf("Failed to %s auto-preservation feature for MachineSet %q. Error: %s", action, machineSet.Name, err)
+				return err
+			}
+			continue
+		}
+		klog.V(3).Infof("Set auto-preservation feature to %q for MachineSet %q", action, machineSet.Name)
+	}
+	return nil
 }
