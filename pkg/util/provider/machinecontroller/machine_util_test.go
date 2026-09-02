@@ -3748,6 +3748,89 @@ var _ = Describe("machine_util", func() {
 				},
 			}),
 		)
+
+		It("should remove all preservation state before in-place update while retaining CA annotations", func() {
+			stop := make(chan struct{})
+			defer close(stop)
+
+			const nodeName = "node-0"
+
+			machine := newMachine(
+				&machinev1.MachineTemplateSpec{ObjectMeta: *newObjectMeta(&metav1.ObjectMeta{GenerateName: machineSet1Deploy1}, 0)},
+				nil,
+				nil,
+				map[string]string{
+					machineutils.PreserveMachineAnnotationKey:              machineutils.PreserveMachineAnnotationValueNow,
+					machineutils.LastAppliedNodePreserveValueAnnotationKey: machineutils.PreserveMachineAnnotationValueNow,
+				},
+				map[string]string{machinev1.NodeLabelKey: nodeName, machinev1.LabelKeyNodeSelectedForUpdate: "true"}, true, metav1.Now())
+			machine.Status.CurrentStatus.PreserveExpiryTime = &metav1.Time{Time: time.Now().Add(10 * time.Minute)}
+
+			node := newNode(1, nil,
+				map[string]string{
+					machineutils.PreserveMachineAnnotationKey:                       machineutils.PreserveMachineAnnotationValueNow,
+					autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationKey:      autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationValue,
+					autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationByMCMKey: autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationByMCMValue,
+				},
+				&corev1.NodeSpec{
+					Taints: []corev1.Taint{{Key: machineutils.NodePreservedTaintKey, Effect: corev1.TaintEffectNoSchedule}},
+				},
+				&corev1.NodeStatus{
+					Conditions: []corev1.NodeCondition{
+						{
+							Type:               machinev1.NodeInPlaceUpdate,
+							Status:             corev1.ConditionTrue,
+							LastTransitionTime: metav1.Now(),
+							Reason:             machinev1.SelectedForUpdate,
+							Message:            "Node is selected for in-place update",
+						},
+						{
+							Type:   machinev1.NodePreserved,
+							Status: corev1.ConditionTrue,
+							Reason: machinev1.PreservedByUser,
+						},
+					},
+				})
+
+			c, trackers := createController(stop, testNamespace, []runtime.Object{machine}, nil, []runtime.Object{node}, nil, false)
+			defer trackers.Stop()
+
+			c.permitGiver = permits.NewPermitGiver(5*time.Second, 1*time.Second)
+			defer c.permitGiver.Close()
+
+			waitForCacheSync(stop, c)
+
+			retryPeriod, _ := c.inPlaceUpdate(context.TODO(), machine)
+			Expect(retryPeriod).To(Equal(machineutils.MediumRetry))
+
+			updatedMachine, getErr := c.controlMachineClient.Machines(testNamespace).Get(context.TODO(), machine.Name, metav1.GetOptions{})
+			Expect(getErr).To(BeNil())
+			Expect(updatedMachine.Annotations).NotTo(HaveKey(machineutils.PreserveMachineAnnotationKey))
+			Expect(updatedMachine.Annotations).NotTo(HaveKey(machineutils.LastAppliedNodePreserveValueAnnotationKey))
+			Expect(updatedMachine.Status.CurrentStatus.PreserveExpiryTime.IsZero()).To(BeTrue())
+
+			updatedNode, getErr := c.targetCoreClient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+			Expect(getErr).To(BeNil())
+
+			Expect(updatedNode.Annotations).NotTo(HaveKey(machineutils.PreserveMachineAnnotationKey))
+
+			preservedCondition := nodeops.GetCondition(updatedNode, machinev1.NodePreserved)
+			Expect(preservedCondition).ToNot(BeNil())
+			Expect(preservedCondition.Status).To(Equal(corev1.ConditionFalse))
+			Expect(preservedCondition.Reason).To(Equal(machinev1.PreservationStopped))
+
+			hasPreservationTaint := false
+			for _, t := range updatedNode.Spec.Taints {
+				if t.Key == machineutils.NodePreservedTaintKey {
+					hasPreservationTaint = true
+					break
+				}
+			}
+			Expect(hasPreservationTaint).To(BeFalse())
+
+			Expect(updatedNode.Annotations).To(HaveKeyWithValue(autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationKey, autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationValue))
+			Expect(updatedNode.Annotations).To(HaveKeyWithValue(autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationByMCMKey, autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationByMCMValue))
+		})
 	})
 
 	Describe("#drainNodeForInPlace", func() {
@@ -4460,7 +4543,7 @@ var _ = Describe("machine_util", func() {
 				c, trackers := createController(stop, testNamespace, controlMachineObjects, nil, targetCoreObjects, nil, false)
 				defer trackers.Stop()
 				waitForCacheSync(stop, c)
-				_, err := c.stopPreservationIfActive(context.TODO(), machine, tc.setup.removePreserveAnnotation)
+				_, err := c.stopPreservationIfActive(context.TODO(), machine, tc.setup.removePreserveAnnotation, false)
 				if tc.expect.err != nil {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(Equal(tc.expect.err.Error()))
@@ -4841,7 +4924,7 @@ var _ = Describe("machine_util", func() {
 				c, trackers := createController(stop, testNamespace, nil, nil, targetCoreObjects, nil, false)
 				defer trackers.Stop()
 				waitForCacheSync(stop, c)
-				_, err := c.removePreservationRelatedAnnotationsOnNode(context.TODO(), node, tc.setup.removePreserveAnnotation)
+				_, err := c.removePreservationRelatedAnnotationsOnNode(context.TODO(), node, tc.setup.removePreserveAnnotation, false)
 				waitForCacheSync(stop, c)
 				updatedNode, getErr := c.targetCoreClient.CoreV1().Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
 				Expect(getErr).To(BeNil())

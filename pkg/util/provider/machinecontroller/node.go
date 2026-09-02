@@ -366,7 +366,7 @@ func (c *controller) cordonNode(ctx context.Context, nodeName string) error {
 }
 
 // removePreservationRelatedAnnotationsOnNode removes the cluster-autoscaler annotation that disables scale down of preserved node
-func (c *controller) removePreservationRelatedAnnotationsOnNode(ctx context.Context, node *corev1.Node, removePreserveAnnotation bool) (*corev1.Node, error) {
+func (c *controller) removePreservationRelatedAnnotationsOnNode(ctx context.Context, node *corev1.Node, removePreserveAnnotation bool, removeCAAnnotations bool) (*corev1.Node, error) {
 	// Check if annotation already absent
 	if node.Annotations == nil {
 		return node, nil
@@ -375,7 +375,7 @@ func (c *controller) removePreservationRelatedAnnotationsOnNode(ctx context.Cont
 	nodeCopy := node.DeepCopy()
 	// If CA scale-down disabled annotation was added by MCM, it can be safely removed.
 	// If the annotation was added by some other entity, then it should not be removed.
-	if nodeCopy.Annotations[autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationByMCMKey] == autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationByMCMValue {
+	if removeCAAnnotations && nodeCopy.Annotations[autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationByMCMKey] == autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationByMCMValue {
 		delete(nodeCopy.Annotations, autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationKey)
 		delete(nodeCopy.Annotations, autoscaler.ClusterAutoscalerScaleDownDisabledAnnotationByMCMKey)
 		updateRequired = true

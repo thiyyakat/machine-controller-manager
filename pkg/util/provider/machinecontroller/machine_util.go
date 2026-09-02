@@ -369,6 +369,8 @@ func (c *controller) updateNodeConditionBasedOnLabel(ctx context.Context, machin
 }
 
 func (c *controller) inPlaceUpdate(ctx context.Context, machine *v1alpha1.Machine) (machineutils.RetryPeriod, error) {
+	var preserveState preserveStateInfo
+	clone := machine
 	cond, err := nodeops.GetNodeCondition(ctx, c.targetCoreClient, getNodeName(machine), v1alpha1.NodeInPlaceUpdate)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -384,13 +386,26 @@ func (c *controller) inPlaceUpdate(ctx context.Context, machine *v1alpha1.Machin
 
 	// if the condition is present and the reason is selected for update then drain the node
 	if cond.Reason == v1alpha1.SelectedForUpdate {
-		retry, err := c.drainNodeForInPlace(ctx, machine)
+		// if machine has any preservation state, remove it to prevent accidental preservation during update
+		preserveState, err = c.getPreserveStateInfo(machine)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return machineutils.ShortRetry, err
+		}
+		if isMachinePreservationBound(&preserveState) {
+			clone = machine.DeepCopy()
+			clone, err = c.stopPreservationIfActive(ctx, clone, true, false)
+			if err != nil {
+				return machineutils.ShortRetry, err
+			}
+		}
+
+		retry, err := c.drainNodeForInPlace(ctx, clone)
 		if err != nil {
 			return retry, err
 		}
 
 		// if the node is drained successfully then fetch the node condition again
-		cond, err = nodeops.GetNodeCondition(ctx, c.targetCoreClient, getNodeName(machine), v1alpha1.NodeInPlaceUpdate)
+		cond, err = nodeops.GetNodeCondition(ctx, c.targetCoreClient, getNodeName(clone), v1alpha1.NodeInPlaceUpdate)
 		if err != nil {
 			return machineutils.ShortRetry, err
 		}
@@ -398,7 +413,7 @@ func (c *controller) inPlaceUpdate(ctx context.Context, machine *v1alpha1.Machin
 
 	if cond.Reason == v1alpha1.ReadyForUpdate {
 		// give machine time for update to get applied
-		return machineutils.MediumRetry, fmt.Errorf("node %s is ready for in-place update", getNodeName(machine))
+		return machineutils.MediumRetry, fmt.Errorf("node %s is ready for in-place update", getNodeName(clone))
 	}
 
 	// if the condition is present and the reason is drain successful then the node is ready for update
@@ -406,11 +421,11 @@ func (c *controller) inPlaceUpdate(ctx context.Context, machine *v1alpha1.Machin
 		cond.Reason = v1alpha1.ReadyForUpdate
 		cond.LastTransitionTime = metav1.Now()
 		cond.Message = "Node is ready for in-place update"
-		if _, err := nodeops.AddOrUpdateConditionsOnNode(ctx, c.targetCoreClient, getNodeName(machine), *cond); err != nil {
+		if _, err := nodeops.AddOrUpdateConditionsOnNode(ctx, c.targetCoreClient, getNodeName(clone), *cond); err != nil {
 			return machineutils.ShortRetry, err
 		}
 		// give machine time for update to get applied
-		return machineutils.MediumRetry, fmt.Errorf("node %s is ready for in-place update", getNodeName(machine))
+		return machineutils.MediumRetry, fmt.Errorf("node %s is ready for in-place update", getNodeName(clone))
 	}
 
 	return machineutils.LongRetry, nil
@@ -2439,7 +2454,7 @@ func (c *controller) preserveMachine(ctx context.Context, machine *v1alpha1.Mach
 }
 
 // stopPreservationIfActive stops the preservation of the machine and node, if preserved, and returns true if machine object has been updated
-func (c *controller) stopPreservationIfActive(ctx context.Context, machine *v1alpha1.Machine, removePreservationAnnotations bool) (*v1alpha1.Machine, error) {
+func (c *controller) stopPreservationIfActive(ctx context.Context, machine *v1alpha1.Machine, removePreservationAnnotations bool, removeCAAnnotations bool) (*v1alpha1.Machine, error) {
 	var err error
 	// removal of preserveExpiryTime is the last step of stopping preservation
 	// therefore, if preserveExpiryTime is not set, machine is not preserved
@@ -2500,7 +2515,7 @@ func (c *controller) stopPreservationIfActive(ctx context.Context, machine *v1al
 		return nil, err
 	}
 	// Step 2: remove annotations from node
-	updatedNode, err = c.removePreservationRelatedAnnotationsOnNode(ctx, updatedNode, removePreservationAnnotations)
+	updatedNode, err = c.removePreservationRelatedAnnotationsOnNode(ctx, updatedNode, removePreservationAnnotations, removeCAAnnotations)
 	if err != nil {
 		return nil, err
 	}
