@@ -774,14 +774,17 @@ func (c *controller) manageMachinePreservation(ctx context.Context, machine *v1a
 		}
 	}()
 	var (
-		nodeFound bool
-		node      *corev1.Node
+		nodeFound         bool
+		node              *corev1.Node
+		removeAnnotations bool
 	)
 	nodeName := machine.Labels[v1alpha1.NodeLabelKey]
 	if nodeName != "" {
 		node, err = c.nodeLister.Get(nodeName) // We don't return on error immediately because we need to determine whether the machine has valid preservation state
 		if err == nil {
 			nodeFound = true
+		} else {
+			klog.Warningf("Error fetching node %q for machine %q: %v", nodeName, machine.Name, err)
 		}
 	}
 	preserveInfo := machineutils.GetPreserveStateInfo(node, machine)
@@ -802,22 +805,12 @@ func (c *controller) manageMachinePreservation(ctx context.Context, machine *v1a
 		return
 	}
 
-	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return
-		}
-		err = nil
-		klog.Warningf("Couldn't find node %q for machine %q", nodeName, machine.Name)
-	}
-
-	// Note: when the backing node cannot be found, we assume the machine's annotation value needs to be enforced to enable
+	// Note: when the backing node cannot be fetched, we assume the machine's annotation value needs to be enforced to enable
 	// preservation of the machine object.
 	effectivePreserveValue := machineutils.GetEffectivePreservationAnnotations(&preserveInfo, nodeFound)
-
-	var removeAnnotations bool
 	clone := machine.DeepCopy()
 	switch effectivePreserveValue {
-	// effectivePreserveValue == "" implies the preservation annotation was deleted to indicate that
+	// effectivePreserveValue == "" implies the preservation annotation was deleted to express intent that
 	// preservation must be stopped
 	case "", machineutils.PreserveMachineAnnotationValueFalse:
 		clone, err = c.stopPreservationIfActive(ctx, clone, removeAnnotations)
